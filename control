@@ -1,0 +1,10 @@
+Package: science.xnu.injector
+Name: Injector
+Depends: 
+Version: 0.0.1
+Architecture: iphoneos-arm
+Description: Inject files to trust cache
+Maintainer: Pwn20wnd
+Author: Pwn20wnd
+Section: System
+Tag: role::hacker
