@@ -16,12 +16,12 @@
 #include <sys/param.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <mach/mach.h>
-#include "async_wake_ios/async_wake_ios/libjb.h"
 #include "patchfinder64.h"
 #include <kmem.h>
- 
-mach_port_t tfp0 = MACH_PORT_NULL;
- 
+#include "CSCommon.h"
+
+extern mach_port_t tfp0;
+
 void wk32(uint64_t kaddr, uint32_t val) {
     if (tfp0 == MACH_PORT_NULL) {
         printf("attempt to write to kernel memory before any kernel memory write primitives available\n");
@@ -106,7 +106,7 @@ uint64_t kmem_alloc(uint64_t size) {
  
 #define ptrSize sizeof(uintptr_t)
  
-static vm_address_t get_kernel_base(mach_port_t tfp0)
+vm_address_t get_kernel_base(mach_port_t tfp0)
 {
     uint64_t addr = 0;
     addr = KERNEL_SEARCH_ADDRESS+MAX_KASLR_SLIDE;
@@ -184,62 +184,4 @@ kwrite(uint64_t where, const void *p, size_t size)
         offset += chunk;
     }
     return offset;
-}
- 
-mach_port_t try_restore_port() {
-    mach_port_t port = MACH_PORT_NULL;
-    kern_return_t err;
-    err = host_get_special_port(mach_host_self(), 0, 4, &port);
-    if (err == KERN_SUCCESS && port != MACH_PORT_NULL) {
-        printf("got persisted port!\n");
-        // make sure rk64 etc use this port
-        return port;
-    }
-    printf("unable to retrieve persisted port\n");
-    return MACH_PORT_NULL;
-}
- 
-int injectTrustCache(int argc, char* argv[], uint64_t trust_chain, uint64_t amficache) {
-    printf("Injecting to trust cache...\n");
-    struct trust_mem mem;
-    size_t length = 0;
-    uint64_t kernel_trust = 0;
-   
-    mem.next = rk64(trust_chain);
-    *(uint64_t *)&mem.uuid[0] = 0xabadbabeabadbabe;
-    *(uint64_t *)&mem.uuid[8] = 0xabadbabeabadbabe;
-   
-    for (int i = 1; i < argc; i++) {
-        int rv = grab_hashes(argv[i], kread, amficache, mem.next);
-        if (rv) {
-            printf("Failed to inject to trust cache.\n");
-            return -1;
-        }
-    }
-   
-    length = (sizeof(mem) + numhash * 20 + 0xFFFF) & ~0xFFFF;
-    kernel_trust = kmem_alloc(length);
-    printf("alloced: 0x%zx => 0x%llx\n", length, kernel_trust);
-   
-    mem.count = numhash;
-    kwrite(kernel_trust, &mem, sizeof(mem));
-    kwrite(kernel_trust + sizeof(mem), allhash, numhash * 20);
-    wk64(trust_chain, kernel_trust);
-    printf("Successfully injected to trust cache.\n");
-    return 0;
-}
- 
-int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        fprintf(stderr,"Usage: inject /full/path/to/executable\n");
-        fprintf(stderr,"Inject executables to trust cache\n");
-        return -1;
-    }
-    tfp0 = try_restore_port();
-    uint64_t kernel_base = get_kernel_base(tfp0);
-    init_kernel(kernel_base, NULL);
-    uint64_t trust_chain = find_trustcache();
-    uint64_t amficache = find_amficache();
-    term_kernel();
-    return injectTrustCache(argc, argv, trust_chain, amficache);
 }

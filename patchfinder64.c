@@ -78,6 +78,7 @@ boyermoore_horspool_memmem(const unsigned char* haystack, size_t hlen,
 
 /* disassembler **************************************************************/
 
+/*
 static int HighestSetBit(int N, uint32_t imm)
 {
 	int i;
@@ -195,6 +196,7 @@ static int DecodeMov(uint32_t opcode, uint64_t total, int first, uint64_t *newva
 	return -1;
 }
 
+*/
 /* patchfinder ***************************************************************/
 
 static addr_t
@@ -365,6 +367,7 @@ calc64(const uint8_t *buf, addr_t start, addr_t end, int which)
     return value[which];
 }
 
+/*
 static addr_t
 calc64mov(const uint8_t *buf, addr_t start, addr_t end, int which)
 {
@@ -394,6 +397,7 @@ find_call64(const uint8_t *buf, addr_t start, size_t length)
 {
     return step64(buf, start, length, 0x94000000, 0xFC000000);
 }
+*/
 
 static addr_t
 follow_call64(const uint8_t *buf, addr_t call)
@@ -438,7 +442,9 @@ static addr_t pstring_size = 0;
 static addr_t kerndumpbase = -1;
 static addr_t kernel_entry = 0;
 static void *kernel_mh = 0;
+#ifndef __ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__
 static addr_t kernel_delta = 0;
+#endif
 
 int
 init_kernel(addr_t base, const char *filename)
@@ -596,7 +602,10 @@ init_kernel(addr_t base, const char *filename)
 void
 term_kernel(void)
 {
-    if (kernel != NULL) free(kernel);
+    if (kernel != NULL) {
+        free(kernel);
+        kernel = NULL;
+    }
 }
 
 /* these operate on VA ******************************************************/
@@ -1452,7 +1461,7 @@ addr_t find_vnode_lookup(void) {
 }
 
 addr_t find_vnode_put(void) {
-    addr_t call1, call2, call3, call4, call5, call6, call7;
+    addr_t call1, call2, call3;
     addr_t func1;
     
     addr_t ent_str = find_strref("KBY: getparent(%p) != parent_vp(%p)", 1, 1);
@@ -1519,7 +1528,7 @@ addr_t find_vnode_getattr(void) {
 }
 
 addr_t find_SHA1Init(void) {
-    addr_t call1, call2;
+    addr_t call1;
     addr_t func1;
     
     addr_t id_str = find_strref("chip-id", 1, 1);
@@ -1569,7 +1578,7 @@ addr_t find_SHA1Final(void) {
 }
 
 addr_t find_csblob_entitlements_dictionary_set(void) {
-    addr_t call1, call2, call3, call4, call5, call6, call7;
+    addr_t call1, call2, call3, call7;
     addr_t func1;
     
     addr_t ent_str = find_strref("entitlements are not a dictionary", 1, 1);
@@ -1595,7 +1604,7 @@ addr_t find_csblob_entitlements_dictionary_set(void) {
     return val;
 }
 addr_t find_kernel_task(void) {
-    addr_t call1, call2, call3, call4, call5, call6, call7;
+    addr_t call1;
     addr_t func1;
     
     addr_t str = find_strref("\"thread_terminate\"", 1, 0);
@@ -1611,8 +1620,7 @@ addr_t find_kernel_task(void) {
 
 
 addr_t find_kernproc(void) {
-    addr_t call1, call2, call3, call4, call5, call6, call7;
-    addr_t func1;
+    addr_t call1, call2, call3, call4, call5, call6;
     
     addr_t err_str = find_strref("0 == error", 1, 0);
     err_str -= kerndumpbase;

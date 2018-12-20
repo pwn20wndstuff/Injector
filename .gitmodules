@@ -1,3 +1,0 @@
-[submodule "async_wake_ios"]
-	path = async_wake_ios
-	url = https://github.com/xerub/async_wake_ios.git
