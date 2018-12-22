@@ -16,6 +16,14 @@
 OSStatus SecStaticCodeCreateWithPathAndAttributes(CFURLRef path, SecCSFlags flags, CFDictionaryRef attributes, SecStaticCodeRef  _Nullable *staticCode);
 OSStatus SecCodeCopySigningInformation(SecStaticCodeRef code, SecCSFlags flags, CFDictionaryRef  _Nullable *information);
 CFStringRef (*_SecCopyErrorMessageString)(OSStatus status, void * __nullable reserved) = NULL;
+extern int MISValidateSignatureAndCopyInfo(NSString *file, NSDictionary *options, NSDictionary **info);
+
+extern NSString *MISCopyErrorStringForErrorCode(int err);
+extern NSString *kMISValidationOptionRespectUppTrustAndAuthorization;
+extern NSString *kMISValidationOptionValidateSignatureOnly;
+extern NSString *kMISValidationOptionUniversalFileOffset;
+extern NSString *kMISValidationOptionAllowAdHocSigning;
+extern NSString *kMISValidationOptionOnlineAuthorization;
  
 mach_port_t tfp0 = MACH_PORT_NULL;
 
@@ -38,9 +46,6 @@ struct hash_entry_t {
     uint16_t start;
 } __attribute__((packed));
 
-struct hash_entry_t amfiIndex[0x100];
-char *amfiData = NULL;
-
 typedef uint8_t hash_t[TRUST_CDHASH_LEN];
 
 mach_port_t try_restore_port() {
@@ -57,62 +62,21 @@ mach_port_t try_restore_port() {
     return MACH_PORT_NULL;
 }
 
-void free_amfitab() {
-    if (amfiData != NULL) {
-        free(amfiData);
-        amfiData = NULL;
-    }
+bool check_amfi(NSString *path) {
+    return MISValidateSignatureAndCopyInfo(path, @{kMISValidationOptionAllowAdHocSigning: @YES, kMISValidationOptionRespectUppTrustAndAuthorization: @YES}, NULL) == 0;
 }
 
-bool init_amfitab(uint64_t amfitab) {
-    if (amfitab == 0)
-        return false;
-
-    int rv = kread(amfitab, &amfiIndex, sizeof(amfiIndex));
-    size_t len = 0;
-
-    for(int i=0; i<0x100; i++) {
-        len += amfiIndex[i].num * 19;
-    }
-    free_amfitab();
-    amfiData = malloc(len);
-    rv = kread(amfitab + sizeof(amfiIndex), amfiData, len);
-    return true;
-}
-
-bool check_amfi(uint64_t amfitab, NSData *hashData) {
-    const char *hash = [hashData bytes];
-    unsigned char idx = hash[0];
-    hash++;
-    if (amfiData == NULL && !init_amfitab(amfitab)) {
-        return false;
-    }
-    if (amfiIndex[idx].num == 0 || amfiIndex[idx].start == 0) {
-        fprintf(stderr, "Nothing found to check in amficache (wrong?)\n");
-        return false;
-    }
-
-    char *amfiNext = amfiData + (amfiIndex[idx].start + amfiIndex[idx].num) * 19;
-    for (char *amfi = amfiData + amfiIndex[idx].start * 19; amfi < amfiNext; amfi += 19) {
-        if (memcmp(hash, amfi, 19) == 0) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes, uint64_t amfitab) {
+NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes) {
   NSArray *result;
   @autoreleasepool {
     NSMutableDictionary *filtered = [hashes mutableCopy];
     for (NSData *cdhash in [filtered allKeys]) {
-        if (check_amfi(amfitab, cdhash)) {
-            printf("%s: already in amfi trustcache, not reinjecting\n", [filtered[cdhash] UTF8String]);
+        if (check_amfi(filtered[cdhash])) {
+            printf("%s: already in static trustcache, not reinjecting\n", [filtered[cdhash] UTF8String]);
             [filtered removeObjectForKey:cdhash];
         }
     }
-    free_amfitab();
+
     struct trust_mem search;
     search.next = trust_chain;
     while (search.next != 0) {
@@ -143,7 +107,7 @@ NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes, uint64_t amf
   return [result autorelease];
 }
 
-int injectTrustCache(int argc, char* argv[], uint64_t trust_chain, uint64_t amficache) {
+int injectTrustCache(int argc, char* argv[], uint64_t trust_chain) {
   @autoreleasepool {
     struct trust_mem mem;
     uint64_t kernel_trust = 0;
@@ -205,7 +169,7 @@ int injectTrustCache(int argc, char* argv[], uint64_t trust_chain, uint64_t amfi
     }
 
 
-    NSArray *filtered = filteredHashes(mem.next, hashes, amficache);
+    NSArray *filtered = filteredHashes(mem.next, hashes);
     int hashesToInject = [filtered count];
     printf("%d new hashes to inject\n", hashesToInject);
     if (hashesToInject < 1) {
@@ -251,11 +215,9 @@ int main(int argc, char* argv[]) {
     uint64_t kernel_base = get_kernel_base(tfp0);
     init_kernel(kernel_base, NULL);
     uint64_t trust_chain = find_trustcache();
-    uint64_t amficache = find_amficache();
     term_kernel();
-    bzero(amfiIndex, sizeof(amfiIndex));
     printf("Injecting to trust cache...\n");
-    int ninjected = injectTrustCache(argc, argv, trust_chain, amficache);
+    int ninjected = injectTrustCache(argc, argv, trust_chain);
     printf("Successfully injected [%d/%d] to trust cache.\n", ninjected, argc - 1);
     return argc - ninjected - 1;
 }
