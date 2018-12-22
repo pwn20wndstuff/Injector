@@ -6,11 +6,17 @@
  *
  */
 
-#include <CoreFoundation/CoreFoundation.h>
+#include <Foundation/Foundation.h>
 #include <mach/mach.h>
 #include <dlfcn.h>
-#include "patchfinder64.h"
 #include "CSCommon.h"
+#ifdef UNDECIMUS
+#include <common.h>
+#define printf(x, ...) LOG(x, ##__VA_ARGS__)
+#define fprintf(f, x, ...) LOG(x, ##__VA_ARGS__)
+#define rk64(x) ReadAnywhere64(x)
+#define wk64(x, y) WriteAnywhere64(x, y)
+#endif
 #include "kern_funcs.h"
 
 OSStatus SecStaticCodeCreateWithPathAndAttributes(CFURLRef path, SecCSFlags flags, CFDictionaryRef attributes, SecStaticCodeRef  _Nullable *staticCode);
@@ -51,9 +57,11 @@ bool check_amfi(NSString *path) {
 }
 
 NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes) {
+#if !__has_feature(objc_arc)
   NSArray *result;
   @autoreleasepool {
-    NSMutableDictionary *filtered = [hashes mutableCopy];
+#endif
+      NSMutableDictionary *filtered = [hashes mutableCopy];
     for (NSData *cdhash in [filtered allKeys]) {
         if (check_amfi(filtered[cdhash])) {
             printf("%s: already in static trustcache, not reinjecting\n", [filtered[cdhash] UTF8String]);
@@ -85,10 +93,14 @@ NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes) {
         }
         free(data);
     }
-    printf("Returning %lu keys\n", [[filtered allKeys] count]);
+    printf("Actually injecting %lu keys\n", [[filtered allKeys] count]);
+#if __has_feature(objc_arc)
+    return [filtered allKeys];
+#else
     result = [[filtered allKeys] retain];
   }
   return [result autorelease];
+#endif
 }
 
 int injectTrustCache(int argc, char* argv[], uint64_t trust_chain) {
@@ -102,14 +114,15 @@ int injectTrustCache(int argc, char* argv[], uint64_t trust_chain) {
     *(uint64_t *)&mem.uuid[8] = 0xabadbabeabadbabe;
     NSMutableDictionary *hashes = [NSMutableDictionary new];
     SecStaticCodeRef staticCode;
-    NSDictionary *info;
+    CFDictionaryRef cfinfo;
+    int duplicates=0;
 
     for (int i = 1; i < argc; i++) {
         OSStatus result = SecStaticCodeCreateWithPathAndAttributes(CFURLCreateWithFileSystemPath(kCFAllocatorDefault, (CFStringRef)@(argv[i]), kCFURLPOSIXPathStyle, false), kSecCSDefaultFlags, NULL, &staticCode);
         if (result != errSecSuccess) {
             if (_SecCopyErrorMessageString != NULL) {
                 CFStringRef error = _SecCopyErrorMessageString(result, NULL);
-                fprintf(stderr, "Unable to generate cdhash for %s: %s\n", argv[i], [(id)error UTF8String]);
+                fprintf(stderr, "Unable to generate cdhash for %s: %s\n", argv[i], [(__bridge id)error UTF8String]);
                 CFRelease(error);
             } else {
                 fprintf(stderr, "Unable to generate cdhash for %s: %d\n", argv[i], result);
@@ -117,7 +130,9 @@ int injectTrustCache(int argc, char* argv[], uint64_t trust_chain) {
             continue;
         }
 
-        result = SecCodeCopySigningInformation(staticCode, kSecCSDefaultFlags, (CFDictionaryRef*)&info);
+        
+        result = SecCodeCopySigningInformation(staticCode, kSecCSDefaultFlags, &cfinfo);
+        NSDictionary *info = CFBridgingRelease(cfinfo);
         CFRelease(staticCode);
         if (result != errSecSuccess) {
             fprintf(stderr, "Unable to copy cdhash info for %s\n", argv[i]);
@@ -136,28 +151,31 @@ int injectTrustCache(int argc, char* argv[], uint64_t trust_chain) {
         } else {
             NSData *cdhash = [cdhashes objectAtIndex:algoIndex];
             if (cdhash != nil) {
-                printf("%s: OK\n", argv[i]);
-                hashes[cdhash] = @(argv[i]);
+                if (hashes[cdhash] == nil) {
+                    printf("%s: OK\n", argv[i]);
+                    hashes[cdhash] = @(argv[i]);
+                } else {
+                    printf("%s: same as %s (ignoring)", argv[i], [hashes[cdhash] UTF8String]);
+                    duplicates++;
+                }
             } else {
                 printf("%s: missing SHA256 cdhash entry\n", argv[i]);
             }
         }
-        [info release];
     }
-    int numHashes = [hashes count];
+    unsigned numHashes = (unsigned)[hashes count];
 
     if (numHashes < 1) {
         fprintf(stderr, "Found no hashes to inject\n");
-        [hashes release];
         return 0;
     }
 
 
     NSArray *filtered = filteredHashes(mem.next, hashes);
-    int hashesToInject = [filtered count];
-    printf("%d new hashes to inject\n", hashesToInject);
+    unsigned hashesToInject = (unsigned)[filtered count];
+    printf("%u new hashes to inject\n", hashesToInject);
     if (hashesToInject < 1) {
-        return numHashes;
+        return 0;
     }
 
     size_t length = (sizeof(mem) + hashesToInject * TRUST_CDHASH_LEN + 0xFFFF) & ~0xFFFF;
@@ -178,7 +196,7 @@ int injectTrustCache(int argc, char* argv[], uint64_t trust_chain) {
     kwrite(kernel_trust + sizeof(mem), buffer, mem.count * TRUST_CDHASH_LEN);
     wk64(trust_chain, kernel_trust);
 
-    return numHashes;
+    return argc - numHashes - duplicates;
   }
 }
 
