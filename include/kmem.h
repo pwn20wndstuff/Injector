@@ -42,8 +42,6 @@ kern_return_t mach_vm_protect (
                                boolean_t set_maximum,
                                vm_prot_t new_protection);
 
-extern mach_port_t tfp0;
-
 uint32_t rk32(uint64_t kaddr);
 uint64_t rk64(uint64_t kaddr);
 

@@ -25,8 +25,6 @@ extern NSString *kMISValidationOptionUniversalFileOffset;
 extern NSString *kMISValidationOptionAllowAdHocSigning;
 extern NSString *kMISValidationOptionOnlineAuthorization;
  
-mach_port_t tfp0 = MACH_PORT_NULL;
-
 enum {
     cdHashTypeSHA1 = 1,
     cdHashTypeSHA256 = 2
@@ -47,20 +45,6 @@ struct hash_entry_t {
 } __attribute__((packed));
 
 typedef uint8_t hash_t[TRUST_CDHASH_LEN];
-
-mach_port_t try_restore_port() {
-    mach_port_t port = MACH_PORT_NULL;
-    kern_return_t err;
-
-    err = host_get_special_port(mach_host_self(), 0, 4, &port);
-    if (err == KERN_SUCCESS && port != MACH_PORT_NULL) {
-        fprintf(stderr, "got persisted port!\n");
-        // make sure rk64 etc use this port
-        return port;
-    }
-    fprintf(stderr, "unable to retrieve persisted port\n");
-    return MACH_PORT_NULL;
-}
 
 bool check_amfi(NSString *path) {
     return MISValidateSignatureAndCopyInfo(path, @{kMISValidationOptionAllowAdHocSigning: @YES, kMISValidationOptionRespectUppTrustAndAuthorization: @YES}, NULL) == 0;
@@ -198,26 +182,11 @@ int injectTrustCache(int argc, char* argv[], uint64_t trust_chain) {
   }
 }
 
-int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        fprintf(stderr,"Usage: inject /full/path/to/executable\n");
-        fprintf(stderr,"Inject executables to trust cache\n");
-        return -1;
-    }
+__attribute__((constructor))
+void ctor() {
     void *lib = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY);
     if (lib != NULL) {
         _SecCopyErrorMessageString = dlsym(lib, "SecCopyErrorMessageString");
         dlclose(lib);
     }
-    tfp0 = try_restore_port();
-    if (tfp0 == MACH_PORT_NULL)
-        return -2;
-    uint64_t kernel_base = get_kernel_base(tfp0);
-    init_kernel(kernel_base, NULL);
-    uint64_t trust_chain = find_trustcache();
-    term_kernel();
-    printf("Injecting to trust cache...\n");
-    int ninjected = injectTrustCache(argc, argv, trust_chain);
-    printf("Successfully injected [%d/%d] to trust cache.\n", ninjected, argc - 1);
-    return argc - ninjected - 1;
 }

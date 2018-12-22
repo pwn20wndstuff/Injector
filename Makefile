@@ -1,12 +1,12 @@
 ARCHS ?= arm64
 target ?= iphone:11.0:11.0
+CFLAGS = -Iinclude
 include $(THEOS)/makefiles/common.mk 
 
 TOOL_NAME = inject
-inject_CODESIGN_FLAGS = -Hsha256 -Hsha1 -Sentitlements.xml
-inject_FRAMEWORKS = IOKit Security
-inject_CFLAGS = -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=missing-braces -Iinclude
+inject_CODESIGN_FLAGS = -Sentitlements.xml
 inject_LIBRARIES = mis
-inject_FILES = inject.m patchfinder64.c kern_funcs.c
+inject_FRAMEWORKS = IOKit Security
+inject_FILES = main.c $(libinjection_FILES)
 
 include $(THEOS_MAKE_PATH)/tool.mk
