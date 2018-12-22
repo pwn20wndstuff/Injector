@@ -7,6 +7,6 @@ TOOL_NAME = inject
 inject_CODESIGN_FLAGS = -Sentitlements.xml
 inject_LIBRARIES = mis
 inject_FRAMEWORKS = IOKit Security
-inject_FILES = main.c $(libinjection_FILES)
+inject_FILES = main.c inject.m patchfinder64.c kern_funcs.c
 
 include $(THEOS_MAKE_PATH)/tool.mk

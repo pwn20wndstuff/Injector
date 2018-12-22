@@ -103,7 +103,7 @@ NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes) {
 #endif
 }
 
-int injectTrustCache(int argc, char* argv[], uint64_t trust_chain) {
+int injectTrustCache(int filecount, char* files[], uint64_t trust_chain) {
   @autoreleasepool {
     struct trust_mem mem;
     uint64_t kernel_trust = 0;
@@ -117,15 +117,15 @@ int injectTrustCache(int argc, char* argv[], uint64_t trust_chain) {
     CFDictionaryRef cfinfo;
     int duplicates=0;
 
-    for (int i = 1; i < argc; i++) {
-        OSStatus result = SecStaticCodeCreateWithPathAndAttributes(CFURLCreateWithFileSystemPath(kCFAllocatorDefault, (CFStringRef)@(argv[i]), kCFURLPOSIXPathStyle, false), kSecCSDefaultFlags, NULL, &staticCode);
+    for (int i = 0; i < filecount; i++) {
+        OSStatus result = SecStaticCodeCreateWithPathAndAttributes(CFURLCreateWithFileSystemPath(kCFAllocatorDefault, (CFStringRef)@(files[i]), kCFURLPOSIXPathStyle, false), kSecCSDefaultFlags, NULL, &staticCode);
         if (result != errSecSuccess) {
             if (_SecCopyErrorMessageString != NULL) {
                 CFStringRef error = _SecCopyErrorMessageString(result, NULL);
-                fprintf(stderr, "Unable to generate cdhash for %s: %s\n", argv[i], [(__bridge id)error UTF8String]);
+                fprintf(stderr, "Unable to generate cdhash for %s: %s\n", files[i], [(__bridge id)error UTF8String]);
                 CFRelease(error);
             } else {
-                fprintf(stderr, "Unable to generate cdhash for %s: %d\n", argv[i], result);
+                fprintf(stderr, "Unable to generate cdhash for %s: %d\n", files[i], result);
             }
             continue;
         }
@@ -135,7 +135,7 @@ int injectTrustCache(int argc, char* argv[], uint64_t trust_chain) {
         NSDictionary *info = CFBridgingRelease(cfinfo);
         CFRelease(staticCode);
         if (result != errSecSuccess) {
-            fprintf(stderr, "Unable to copy cdhash info for %s\n", argv[i]);
+            fprintf(stderr, "Unable to copy cdhash info for %s\n", files[i]);
             continue;
         }
         NSArray *cdhashes = info[@"cdhashes"];
@@ -143,23 +143,23 @@ int injectTrustCache(int argc, char* argv[], uint64_t trust_chain) {
         NSUInteger algoIndex = [algos indexOfObject:@(cdHashTypeSHA256)];
 
         if (cdhashes == nil) {
-            printf("%s: no cdhashes\n", argv[i]);
+            printf("%s: no cdhashes\n", files[i]);
         } else if (algos == nil) {
-            printf("%s: no algos\n", argv[i]);
+            printf("%s: no algos\n", files[i]);
         } else if (algoIndex == NSNotFound) {
-            printf("%s: does not have SHA256 hash\n", argv[i]);
+            printf("%s: does not have SHA256 hash\n", files[i]);
         } else {
             NSData *cdhash = [cdhashes objectAtIndex:algoIndex];
             if (cdhash != nil) {
                 if (hashes[cdhash] == nil) {
-                    printf("%s: OK\n", argv[i]);
-                    hashes[cdhash] = @(argv[i]);
+                    printf("%s: OK\n", files[i]);
+                    hashes[cdhash] = @(files[i]);
                 } else {
-                    printf("%s: same as %s (ignoring)", argv[i], [hashes[cdhash] UTF8String]);
+                    printf("%s: same as %s (ignoring)", files[i], [hashes[cdhash] UTF8String]);
                     duplicates++;
                 }
             } else {
-                printf("%s: missing SHA256 cdhash entry\n", argv[i]);
+                printf("%s: missing SHA256 cdhash entry\n", files[i]);
             }
         }
     }
@@ -196,7 +196,7 @@ int injectTrustCache(int argc, char* argv[], uint64_t trust_chain) {
     kwrite(kernel_trust + sizeof(mem), buffer, mem.count * TRUST_CDHASH_LEN);
     wk64(trust_chain, kernel_trust);
 
-    return argc - numHashes - duplicates;
+    return filecount - numHashes - duplicates;
   }
 }
 

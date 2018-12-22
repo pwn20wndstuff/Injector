@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
     uint64_t trust_chain = find_trustcache();
     term_kernel();
     printf("Injecting to trust cache...\n");
-    int errs = injectTrustCache(argc, argv, trust_chain);
+    int errs = injectTrustCache(argc - 1, argv + 1, trust_chain);
     printf("Successfully injected [%d/%d] to trust cache.\n", argc - errs - 1, argc - 1);
     return errs;
 }

@@ -9,6 +9,6 @@
 #ifndef _INJECT_H_
 #define _INJECT_H_
 
-int injectTrustCache(int argc, char* argv[], uint64_t trust_chain);
+int injectTrustCache(int filecount, char* files[], uint64_t trust_chain);
 
 #endif
