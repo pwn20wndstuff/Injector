@@ -72,10 +72,27 @@ uint32_t rk32(uint64_t kaddr) {
 }
  
 uint64_t rk64(uint64_t kaddr) {
-    uint64_t lower = rk32(kaddr);
-    uint64_t higher = rk32(kaddr+4);
-    uint64_t full = ((higher<<32) | lower);
-    return full;
+    kern_return_t err;
+    uint64_t val = 0;
+    mach_vm_size_t outsize = 0;
+    err = mach_vm_read_overwrite(tfp0,
+            (mach_vm_address_t)kaddr,
+            (mach_vm_size_t)sizeof(uint64_t),
+            (mach_vm_address_t)&val,
+            &outsize);
+
+    if (err != KERN_SUCCESS){
+        printf("tfp0 read failed %s addr: 0x%llx err:%x port:%x\n", mach_error_string(err), kaddr, err, tfp0);
+        sleep(3);
+        return 0;
+    }
+
+    if (outsize != sizeof(uint64_t)){
+        printf("tfp0 read was short (expected %lx, got %llx\n", sizeof(uint64_t), outsize);
+        sleep(3);
+        return 0;
+    }
+    return val;
 }
  
 uint64_t kmem_alloc(uint64_t size) {

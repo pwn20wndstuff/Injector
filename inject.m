@@ -38,6 +38,9 @@ struct hash_entry_t {
     uint16_t start;
 } __attribute__((packed));
 
+struct hash_entry_t amfiIndex[0x100];
+char *amfiData = NULL;
+
 typedef uint8_t hash_t[TRUST_CDHASH_LEN];
 
 mach_port_t try_restore_port() {
@@ -53,15 +56,103 @@ mach_port_t try_restore_port() {
     fprintf(stderr, "unable to retrieve persisted port\n");
     return MACH_PORT_NULL;
 }
- 
+
+void free_amfitab() {
+    if (amfiData != NULL) {
+        free(amfiData);
+        amfiData = NULL;
+    }
+}
+
+bool init_amfitab(uint64_t amfitab) {
+    if (amfitab == 0)
+        return false;
+
+    int rv = kread(amfitab, &amfiIndex, sizeof(amfiIndex));
+    size_t len = 0;
+
+    for(int i=0; i<0x100; i++) {
+        len += amfiIndex[i].num * 19;
+    }
+    free_amfitab();
+    amfiData = malloc(len);
+    rv = kread(amfitab + sizeof(amfiIndex), amfiData, len);
+    return true;
+}
+
+bool check_amfi(uint64_t amfitab, NSData *hashData) {
+    const char *hash = [hashData bytes];
+    unsigned char idx = hash[0];
+    hash++;
+    if (amfiData == NULL && !init_amfitab(amfitab)) {
+        return false;
+    }
+    if (amfiIndex[idx].num == 0 || amfiIndex[idx].start == 0) {
+        fprintf(stderr, "Nothing found to check in amficache (wrong?)\n");
+        return false;
+    }
+
+    char *amfiNext = amfiData + (amfiIndex[idx].start + amfiIndex[idx].num) * 19;
+    for (char *amfi = amfiData + amfiIndex[idx].start * 19; amfi < amfiNext; amfi += 19) {
+        if (memcmp(hash, amfi, 19) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes, uint64_t amfitab) {
+  NSArray *result;
+  @autoreleasepool {
+    NSMutableDictionary *filtered = [hashes mutableCopy];
+    for (NSData *cdhash in [filtered allKeys]) {
+        if (check_amfi(amfitab, cdhash)) {
+            printf("%s: already in amfi trustcache, not reinjecting\n", [filtered[cdhash] UTF8String]);
+            [filtered removeObjectForKey:cdhash];
+        }
+    }
+    free_amfitab();
+    struct trust_mem search;
+    search.next = trust_chain;
+    while (search.next != 0) {
+        uint64_t searchAddr = search.next;
+        kread(searchAddr, &search, sizeof(struct trust_mem));
+        //printf("Checking %d entries at 0x%llx\n", search.count, searchAddr);
+        char *data = malloc(search.count * TRUST_CDHASH_LEN);
+        kread(searchAddr + sizeof(struct trust_mem), data, search.count * TRUST_CDHASH_LEN);
+        size_t data_size = search.count * TRUST_CDHASH_LEN;
+
+        for (char *dataref = data; dataref <= data + data_size - TRUST_CDHASH_LEN; dataref += TRUST_CDHASH_LEN) {
+            NSData *cdhash = [NSData dataWithBytesNoCopy:dataref length:TRUST_CDHASH_LEN freeWhenDone:NO];
+            NSString *hashName = filtered[cdhash];
+            if (hashName != nil) {
+                printf("%s: already in dynamic trustcache, not reinjecting\n", [hashName UTF8String]);
+                [filtered removeObjectForKey:cdhash];
+                if ([filtered count] == 0) {
+                    free(data);
+                    return nil;
+                }
+            }
+        }
+        free(data);
+    }
+    printf("Returning %lu keys\n", [[filtered allKeys] count]);
+    result = [[filtered allKeys] retain];
+  }
+  return [result autorelease];
+}
+
 int injectTrustCache(int argc, char* argv[], uint64_t trust_chain, uint64_t amficache) {
+  @autoreleasepool {
     struct trust_mem mem;
     uint64_t kernel_trust = 0;
-   
+
     mem.next = rk64(trust_chain);
+    mem.count = 0;
     *(uint64_t *)&mem.uuid[0] = 0xabadbabeabadbabe;
     *(uint64_t *)&mem.uuid[8] = 0xabadbabeabadbabe;
-    NSMutableArray *hashes = [[NSMutableArray alloc] init];
+    NSMutableDictionary *hashes = [NSMutableDictionary new];
     SecStaticCodeRef staticCode;
     NSDictionary *info;
 
@@ -89,16 +180,16 @@ int injectTrustCache(int argc, char* argv[], uint64_t trust_chain, uint64_t amfi
         NSUInteger algoIndex = [algos indexOfObject:@(cdHashTypeSHA256)];
 
         if (cdhashes == nil) {
-           printf("%s: no cdhashes\n", argv[i]);
+            printf("%s: no cdhashes\n", argv[i]);
         } else if (algos == nil) {
-           printf("%s: no algos\n", argv[i]);
+            printf("%s: no algos\n", argv[i]);
         } else if (algoIndex == NSNotFound) {
-           printf("%s: does not have SHA256 hash\n", argv[i]);
+            printf("%s: does not have SHA256 hash\n", argv[i]);
         } else {
             NSData *cdhash = [cdhashes objectAtIndex:algoIndex];
             if (cdhash != nil) {
                 printf("%s: OK\n", argv[i]);
-                [hashes addObject:cdhash];
+                hashes[cdhash] = @(argv[i]);
             } else {
                 printf("%s: missing SHA256 cdhash entry\n", argv[i]);
             }
@@ -112,29 +203,37 @@ int injectTrustCache(int argc, char* argv[], uint64_t trust_chain, uint64_t amfi
         [hashes release];
         return 0;
     }
-    size_t length = (sizeof(mem) + numHashes * TRUST_CDHASH_LEN + 0xFFFF) & ~0xFFFF;
-    char *buffer = malloc(numHashes * TRUST_CDHASH_LEN);
+
+
+    NSArray *filtered = filteredHashes(mem.next, hashes, amficache);
+    int hashesToInject = [filtered count];
+    printf("%d new hashes to inject\n", hashesToInject);
+    if (hashesToInject < 1) {
+        return numHashes;
+    }
+
+    size_t length = (sizeof(mem) + hashesToInject * TRUST_CDHASH_LEN + 0xFFFF) & ~0xFFFF;
+    char *buffer = malloc(hashesToInject * TRUST_CDHASH_LEN);
     if (buffer == NULL) {
         fprintf(stderr, "Unable to allocate memory for cdhashes: %s\n", strerror(errno));
-        [hashes release];
         return -3;
     }
     char *curbuf = buffer;
-    for (NSData *hash in hashes) {
+    for (NSData *hash in filtered) {
         memcpy(curbuf, [hash bytes], TRUST_CDHASH_LEN);
         curbuf += TRUST_CDHASH_LEN;
     }
     kernel_trust = kmem_alloc(length);
-   
-    mem.count = numHashes;
+
+    mem.count = hashesToInject;
     kwrite(kernel_trust, &mem, sizeof(mem));
     kwrite(kernel_trust + sizeof(mem), buffer, mem.count * TRUST_CDHASH_LEN);
     wk64(trust_chain, kernel_trust);
 
-    [hashes release];
     return numHashes;
+  }
 }
- 
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         fprintf(stderr,"Usage: inject /full/path/to/executable\n");
@@ -154,6 +253,7 @@ int main(int argc, char* argv[]) {
     uint64_t trust_chain = find_trustcache();
     uint64_t amficache = find_amficache();
     term_kernel();
+    bzero(amfiIndex, sizeof(amfiIndex));
     printf("Injecting to trust cache...\n");
     int ninjected = injectTrustCache(argc, argv, trust_chain, amficache);
     printf("Successfully injected [%d/%d] to trust cache.\n", ninjected, argc - 1);

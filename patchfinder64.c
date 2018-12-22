@@ -6,6 +6,11 @@
 //  Copyright © 2017 xerub. All rights reserved.
 //
 
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <mach-o/loader.h>
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
@@ -16,6 +21,8 @@ typedef unsigned long long addr_t;
 #define IS64(image) (*(uint8_t *)(image) & 1)
 
 #define MACHO(p) ((*(unsigned int *)(p) & ~1) == 0xfeedface)
+
+#define REAL_ADDR(x) ((uint64_t)x + (uint64_t)kernel - (uint64_t)kernel_mh + (uint64_t)0xFFFFFFF007004000)
 
 /* generic stuff *************************************************************/
 
@@ -416,12 +423,6 @@ follow_cbz(const uint8_t *buf, addr_t cbz)
 }
 
 /* kernel iOS10 **************************************************************/
-
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <mach-o/loader.h>
 
 #ifdef __ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__
 #include <mach/mach.h>
@@ -1020,78 +1021,26 @@ find_trustcache(void)
 addr_t
 find_amficache(void)
 {
-    addr_t cbz, call, func, val;
-    addr_t ref = find_strref("amfi_prevent_old_entitled_platform_binaries", 1, 1);
+    addr_t ref = find_strref("in-kernel", 1, 1);
     if (!ref) {
-        // iOS 11
-        ref = find_strref("com.apple.MobileFileIntegrity", 0, 1);
-        if (!ref) {
-            return 0;
-        }
-        ref -= kerndumpbase;
-        call = step64(kernel, ref, 64, INSN_CALL);
-        if (!call) {
-            return 0;
-        }
-        call = step64(kernel, call + 4, 64, INSN_CALL);
-        goto okay;
-    }
-    ref -= kerndumpbase;
-    cbz = step64(kernel, ref, 32, INSN_CBZ);
-    if (!cbz) {
         return 0;
     }
-    call = step64(kernel, follow_cbz(kernel, cbz), 4, INSN_CALL);
-okay:
+    ref -= kerndumpbase;
+    //printf("ref at 0x%llx 0x%llx\n", ref, REAL_ADDR(ref));
+    addr_t call = step64_back(kernel, ref, 32, INSN_CALL);
     if (!call) {
         return 0;
     }
-    func = follow_call64(kernel, call);
+    //printf("call at 0x%llx 0x%llx\n", call, REAL_ADDR(call));
+    if (!call) {
+        return 0;
+    }
+    addr_t func = follow_call64(kernel, call);
+    //printf("func at 0x%llx 0x%llx\n", func, REAL_ADDR(func));
     if (!func) {
         return 0;
     }
-    val = calc64(kernel, func, func + 16, 8);
-    if (!val) {
-        ref = find_strref("%s: only allowed process can check the trust cache", 1, 1); // Trying to find AppleMobileFileIntegrityUserClient::isCdhashInTrustCache
-        if (!ref) {
-            return 0;
-        }
-        ref -= kerndumpbase;
-        call = step64_back(kernel, ref, 11*4, INSN_CALL);
-        if (!call) {
-            return 0;
-        }
-        func = follow_call64(kernel, call);
-        if (!func) {
-            return 0;
-        }
-        call = step64(kernel, func, 8*4, INSN_CALL);
-        if (!call) {
-            return 0;
-        }
-        func = follow_call64(kernel, call);
-        if (!func) {
-            return 0;
-        }
-        call = step64(kernel, func, 8*4, INSN_CALL);
-        if (!call) {
-            return 0;
-        }
-        call = step64(kernel, call+4, 8*4, INSN_CALL);
-        if (!call) {
-            return 0;
-        }
-        func = follow_call64(kernel, call);
-        if (!func) {
-            return 0;
-        }
-        call = step64(kernel, func, 12*4, INSN_CALL);
-        if (!call) {
-            return 0;
-        }
-        
-        val = calc64(kernel, call, call + 6*4, 21);
-    }
+    addr_t val = calc64(kernel, func + 32, func + 40, 9);
     return val + kerndumpbase;
 }
 
