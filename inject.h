@@ -8,7 +8,8 @@
 
 #ifndef _INJECT_H_
 #define _INJECT_H_
+#include <Foundation/Foundation.h>
 
-int injectTrustCache(int filecount, char* files[], uint64_t trust_chain);
+int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain);
 
 #endif

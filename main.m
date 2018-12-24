@@ -44,7 +44,18 @@ int main(int argc, char* argv[]) {
     uint64_t trust_chain = find_trustcache();
     term_kernel();
     printf("Injecting to trust cache...\n");
-    int errs = injectTrustCache(argc - 1, argv + 1, trust_chain);
-    printf("Successfully injected [%d/%d] to trust cache.\n", argc - errs - 1, argc - 1);
+  @autoreleasepool {
+    NSMutableArray *files = [NSMutableArray new];
+    for (int i=1; i<argc; i++) {
+        [files addObject:@( argv[i] )];
+    }
+    int errs = injectTrustCache(files, trust_chain);
+    if (errs < 0) {
+        printf("Error %d injecting to trust cache.\n", errs);
+    } else {
+        printf("Successfully injected [%d/%d] to trust cache.\n", (int)files.count - errs, (int)files.count);
+    }
+
     return errs;
+  }
 }
