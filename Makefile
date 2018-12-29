@@ -1,5 +1,5 @@
 ARCHS ?= arm64
-target ?= iphone:11.0:11.0
+target ?= iphone:latest:11.0
 CFLAGS = -Iinclude
 include $(THEOS)/makefiles/common.mk 
 

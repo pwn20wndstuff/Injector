@@ -31,10 +31,14 @@ extern NSString *kMISValidationOptionUniversalFileOffset;
 extern NSString *kMISValidationOptionAllowAdHocSigning;
 extern NSString *kMISValidationOptionOnlineAuthorization;
  
-enum {
+enum cdHashType {
     cdHashTypeSHA1 = 1,
     cdHashTypeSHA256 = 2
 };
+
+static char *cdHashName[3] = {NULL, "SHA1", "SHA256"};
+
+static enum cdHashType requiredHash = cdHashTypeSHA256;
 
 #define TRUST_CDHASH_LEN (20)
  
@@ -54,6 +58,49 @@ typedef uint8_t hash_t[TRUST_CDHASH_LEN];
 
 bool check_amfi(NSString *path) {
     return MISValidateSignatureAndCopyInfo(path, @{kMISValidationOptionAllowAdHocSigning: @YES, kMISValidationOptionRespectUppTrustAndAuthorization: @YES}, NULL) == 0;
+}
+
+NSString *cdhashFor(NSString *file) {
+    NSString *cdhash = nil;
+    SecStaticCodeRef staticCode;
+    OSStatus result = SecStaticCodeCreateWithPathAndAttributes(CFURLCreateWithFileSystemPath(kCFAllocatorDefault, (CFStringRef)file, kCFURLPOSIXPathStyle, false), kSecCSDefaultFlags, NULL, &staticCode);
+    const char *filename = file.UTF8String;
+    if (result != errSecSuccess) {
+        if (_SecCopyErrorMessageString != NULL) {
+            CFStringRef error = _SecCopyErrorMessageString(result, NULL);
+            fprintf(stderr, "Unable to generate cdhash for %s: %s\n", filename, [(__bridge id)error UTF8String]);
+            CFRelease(error);
+        } else {
+            fprintf(stderr, "Unable to generate cdhash for %s: %d\n", filename, result);
+        }
+        return nil;
+    }
+    
+    CFDictionaryRef cfinfo;
+    result = SecCodeCopySigningInformation(staticCode, kSecCSDefaultFlags, &cfinfo);
+    NSDictionary *info = CFBridgingRelease(cfinfo);
+    CFRelease(staticCode);
+    if (result != errSecSuccess) {
+        fprintf(stderr, "Unable to copy cdhash info for %s\n", filename);
+        return nil;
+    }
+    NSArray *cdhashes = info[@"cdhashes"];
+    NSArray *algos = info[@"digest-algorithms"];
+    NSUInteger algoIndex = [algos indexOfObject:@(requiredHash)];
+    
+    if (cdhashes == nil) {
+        printf("%s: no cdhashes\n", filename);
+    } else if (algos == nil) {
+        printf("%s: no algos\n", filename);
+    } else if (algoIndex == NSNotFound) {
+        printf("%s: does not have %s hash\n", cdHashName[requiredHash], filename);
+    } else {
+        cdhash = [cdhashes objectAtIndex:algoIndex];
+        if (cdhash == nil) {
+            printf("%s: missing %s cdhash entry\n", file.UTF8String, cdHashName[requiredHash]);
+        }
+    }
+    return cdhash;
 }
 
 NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes) {
@@ -113,58 +160,18 @@ int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain) {
     *(uint64_t *)&mem.uuid[0] = 0xabadbabeabadbabe;
     *(uint64_t *)&mem.uuid[8] = 0xabadbabeabadbabe;
     NSMutableDictionary *hashes = [NSMutableDictionary new];
-    SecStaticCodeRef staticCode;
-    CFDictionaryRef cfinfo;
     int errors=0;
 
     for (NSString *file in files) {
-        OSStatus result = SecStaticCodeCreateWithPathAndAttributes(CFURLCreateWithFileSystemPath(kCFAllocatorDefault, (CFStringRef)file, kCFURLPOSIXPathStyle, false), kSecCSDefaultFlags, NULL, &staticCode);
-        const char *filename = file.UTF8String;
-        if (result != errSecSuccess) {
-            if (_SecCopyErrorMessageString != NULL) {
-                CFStringRef error = _SecCopyErrorMessageString(result, NULL);
-                fprintf(stderr, "Unable to generate cdhash for %s: %s\n", filename, [(__bridge id)error UTF8String]);
-                CFRelease(error);
-            } else {
-                fprintf(stderr, "Unable to generate cdhash for %s: %d\n", filename, result);
-            }
-            errors++;
-            continue;
-        }
-
-        
-        result = SecCodeCopySigningInformation(staticCode, kSecCSDefaultFlags, &cfinfo);
-        NSDictionary *info = CFBridgingRelease(cfinfo);
-        CFRelease(staticCode);
-        if (result != errSecSuccess) {
-            fprintf(stderr, "Unable to copy cdhash info for %s\n", filename);
-            continue;
-        }
-        NSArray *cdhashes = info[@"cdhashes"];
-        NSArray *algos = info[@"digest-algorithms"];
-        NSUInteger algoIndex = [algos indexOfObject:@(cdHashTypeSHA256)];
-
-        if (cdhashes == nil) {
-            printf("%s: no cdhashes\n", filename);
-            errors++;
-        } else if (algos == nil) {
-            printf("%s: no algos\n", filename);
-            errors++;
-        } else if (algoIndex == NSNotFound) {
-            printf("%s: does not have SHA256 hash\n", filename);
+        NSString *cdhash = cdhashFor(file);
+        if (cdhash == nil) {
             errors++;
         } else {
-            NSData *cdhash = [cdhashes objectAtIndex:algoIndex];
-            if (cdhash != nil) {
-                if (hashes[cdhash] == nil) {
-                    printf("%s: OK\n", filename);
-                    hashes[cdhash] = file;
-                } else {
-                    printf("%s: same as %s (ignoring)", filename, [hashes[cdhash] UTF8String]);
-                }
+            if (hashes[cdhash] == nil) {
+                printf("%s: OK\n", file.UTF8String);
+                hashes[cdhash] = file;
             } else {
-                printf("%s: missing SHA256 cdhash entry\n", filename);
-                errors++;
+                printf("%s: same as %s (ignoring)", file.UTF8String, [hashes[cdhash] UTF8String]);
             }
         }
     }
