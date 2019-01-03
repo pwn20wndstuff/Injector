@@ -14,8 +14,8 @@
 #include <common.h>
 #define printf(x, ...) LOG(x, ##__VA_ARGS__)
 #define fprintf(f, x, ...) LOG(x, ##__VA_ARGS__)
-#define rk64(x) ReadAnywhere64(x)
-#define wk64(x, y) WriteAnywhere64(x, y)
+#define rk64(x) ReadKernel64(x)
+#define wk64(x, y) WriteKernel64(x, y)
 #endif
 #include "kern_funcs.h"
 
