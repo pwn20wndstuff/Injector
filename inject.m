@@ -56,7 +56,7 @@ struct hash_entry_t {
 
 typedef uint8_t hash_t[TRUST_CDHASH_LEN];
 
-bool check_amfi(NSString *path) {
+bool isInAMFIStaticCache(NSString *path) {
     return MISValidateSignatureAndCopyInfo(path, @{kMISValidationOptionAllowAdHocSigning: @YES, kMISValidationOptionRespectUppTrustAndAuthorization: @YES}, NULL) == 0;
 }
 
@@ -110,7 +110,7 @@ NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes) {
 #endif
       NSMutableDictionary *filtered = [hashes mutableCopy];
     for (NSData *cdhash in [filtered allKeys]) {
-        if (check_amfi(filtered[cdhash])) {
+        if (isInAMFIStaticCache(filtered[cdhash])) {
             printf("%s: already in static trustcache, not reinjecting\n", [filtered[cdhash] UTF8String]);
             [filtered removeObjectForKey:cdhash];
         }
