@@ -72,56 +72,7 @@ uint64_t kmem_alloc(uint64_t size) {
     }
     return addr;
 }
- 
-// https://github.com/JonathanSeals/kernelversionhacker/blob/3dcbf59f316047a34737f393ff946175164bf03f/kernelversionhacker.c#L92
- 
-#define IMAGE_OFFSET 0x2000
-#define MACHO_HEADER_MAGIC 0xfeedfacf
-#define MAX_KASLR_SLIDE 0x21000000
-#define KERNEL_SEARCH_ADDRESS 0xfffffff007004000
- 
-#define ptrSize sizeof(uintptr_t)
- 
-vm_address_t get_kernel_base(mach_port_t tfp0)
-{
-    uint64_t addr = 0;
-    addr = KERNEL_SEARCH_ADDRESS+MAX_KASLR_SLIDE;
-   
-    while (1) {
-        char *buf;
-        mach_msg_type_number_t sz = 0;
-        kern_return_t ret = vm_read(tfp0, addr, 0x200, (vm_offset_t*)&buf, &sz);
-       
-        if (ret) {
-            goto next;
-        }
-       
-        if (*((uint32_t *)buf) == MACHO_HEADER_MAGIC) {
-            int ret = vm_read(tfp0, addr, 0x1000, (vm_offset_t*)&buf, &sz);
-            if (ret != KERN_SUCCESS) {
-                printf("Failed vm_read %i\n", ret);
-                goto next;
-            }
-           
-            for (uintptr_t i=addr; i < (addr+0x2000); i+=(ptrSize)) {
-                mach_msg_type_number_t sz;
-                int ret = vm_read(tfp0, i, 0x120, (vm_offset_t*)&buf, &sz);
-               
-                if (ret != KERN_SUCCESS) {
-                    printf("Failed vm_read %i\n", ret);
-                    exit(-1);
-                }
-                if (!strcmp(buf, "__text") && !strcmp(buf+0x10, "__PRELINK_TEXT")) {
-                    return addr;
-                }
-            }
-        }
-       
-    next:
-        addr -= 0x200000;
-    }
-}
- 
+
 size_t kread(uint64_t where, void *p, size_t size)
 {
     int rv;

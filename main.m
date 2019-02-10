@@ -39,7 +39,13 @@ int main(int argc, char* argv[]) {
     if (tfp0 == MACH_PORT_NULL)
         return -2;
     set_tfp0(tfp0);
-    uint64_t kernel_base = get_kernel_base(tfp0);
+    uint64_t kernel_base = 0;
+    struct task_dyld_info dyld_info = { 0 };
+    mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
+    if (task_info(tfp0, TASK_DYLD_INFO, (task_info_t)&dyld_info, &count) != KERN_SUCCESS ||
+        (kernel_base = dyld_info.all_image_info_addr) == 0) {
+        return -3;
+    }
     init_kernel(kernel_base, NULL);
     uint64_t trust_chain = find_trustcache();
     term_kernel();
