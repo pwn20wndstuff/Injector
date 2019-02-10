@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) {
         (kernel_base = dyld_info.all_image_info_addr) == 0) {
         return -3;
     }
-    init_kernel(kernel_base, NULL);
+    init_kernel(kread, kernel_base, NULL);
     uint64_t trust_chain = find_trustcache();
     term_kernel();
     printf("Injecting to trust cache...\n");
