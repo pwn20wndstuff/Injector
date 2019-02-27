@@ -46,11 +46,10 @@ int main(int argc, char* argv[]) {
         (kernel_base = dyld_info.all_image_info_addr) == 0) {
         return -3;
     }
-    init_kernel(kread, kernel_base, NULL);
-    uint64_t trust_chain = find_trustcache();
-    term_kernel();
-    printf("Injecting to trust cache...\n");
   @autoreleasepool {
+    NSMutableDictionary *dictionary = [NSMutableDictionary dictionaryWithContentsOfFile:@"/jb/offsets.plist"];
+    uint64_t trust_chain = [dictionary[@"TrustChain"] unsignedLongLongValue];
+    printf("Injecting to trust cache...\n");
     NSMutableArray *files = [NSMutableArray new];
     for (int i=1; i<argc; i++) {
         [files addObject:@( argv[i] )];
