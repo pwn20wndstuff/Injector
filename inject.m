@@ -150,11 +150,7 @@ NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes) {
 #endif
 }
 
-#if UNDECIMUS
 int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain, int (*pmap_load_trust_cache)(uint64_t, size_t))
-#else
-int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain)
-#endif
 {
   @autoreleasepool {
     struct trust_mem mem;
@@ -162,12 +158,7 @@ int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain)
 
     mem.next = rk64(trust_chain);
     mem.count = 0;
-#if UNDECIMUS
     arc4random_buf(&mem.uuid, 16);
-#else
-    *(uint64_t *)&mem.uuid[0] = 0xabadbabeabadbabe;
-    *(uint64_t *)&mem.uuid[8] = 0xabadbabeabadbabe;
-#endif
     NSMutableDictionary *hashes = [NSMutableDictionary new];
     int errors=0;
 
@@ -215,11 +206,7 @@ int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain)
     mem.count = hashesToInject;
     kwrite(kernel_trust, &mem, sizeof(mem));
     kwrite(kernel_trust + sizeof(mem), buffer, mem.count * TRUST_CDHASH_LEN);
-#if UNDECIMUS
     pmap_load_trust_cache(kernel_trust, length);
-#else
-    wk64(trust_chain, kernel_trust);
-#endif
 
     return (int)errors;
   }

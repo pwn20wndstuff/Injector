@@ -11,11 +11,7 @@
 #include <Foundation/Foundation.h>
 
 NSString *cdhashFor(NSString *file);
-#if UNDECIMUS
 int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain, int (*pmap_load_trust_cache)(uint64_t, size_t));
-#else
-int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain);
-#endif
 bool isInAMFIStaticCache(NSString *path);
 
 #endif

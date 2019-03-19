@@ -19,7 +19,14 @@
 #include "patchfinder64.h"
 #include <kmem.h>
 #include "CSCommon.h"
+#include "kern_funcs.h"
+#include "kernel_call.h"
+#include "parameters.h"
+#include "kc_parameters.h"
+#include "kernel_memory.h"
 
+offsets_t offs;
+uint64_t kernel_base;
 static mach_port_t tfp0=MACH_PORT_NULL;
 size_t kread(uint64_t where, void *p, size_t size);
 size_t kwrite(uint64_t where, const void *p, size_t size);
@@ -116,4 +123,30 @@ size_t kwrite(uint64_t where, const void *p, size_t size)
         offset += chunk;
     }
     return offset;
+}
+
+uint64_t task_self_addr() {
+    uint64_t kernproc = rk64(rk64(GETOFFSET(kernel_task)) + OFFSET(task, bsd_info));
+    uint64_t proc = kernproc;
+    pid_t our_pid = getpid();
+    uint64_t our_proc = 0;
+    while (proc) {
+        if (rk32(proc + OFFSET(proc, p_pid)) == our_pid) {
+            our_proc = proc;
+            break;
+        }
+        proc = rk64(proc + OFFSET(proc, p_list));
+    }
+    uint64_t task_addr = rk64(our_proc + OFFSET(proc, task));
+    uint64_t itk_space = rk64(task_addr + OFFSET(task, itk_space));
+    uint64_t is_table = rk64(itk_space + OFFSET(ipc_space, is_table));
+    mach_port_t port = mach_task_self();
+    uint32_t port_index = port >> 8;
+    const int sizeof_ipc_entry_t = SIZE(ipc_entry);
+    uint64_t port_addr = rk64(is_table + (port_index * sizeof_ipc_entry_t));
+    return port_addr;
+}
+
+int _pmap_load_trust_cache(uint64_t kernel_trust, size_t length) {
+    return (int)kernel_call_7(GETOFFSET(pmap_load_trust_cache), 3, kernel_trust, length, 0);
 }

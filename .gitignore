@@ -1,3 +1,5 @@
 .theos
 obj
 packages
+.DS_Store
+
