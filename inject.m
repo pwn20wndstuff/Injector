@@ -158,7 +158,8 @@ int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain, int (*pma
 
     mem.next = rk64(trust_chain);
     mem.count = 0;
-    arc4random_buf(&mem.uuid, 16);
+    uuid_generate(mem.uuid);
+      
     NSMutableDictionary *hashes = [NSMutableDictionary new];
     int errors=0;
 
