@@ -147,6 +147,7 @@ uint64_t task_self_addr() {
     return port_addr;
 }
 
+int (*pmap_load_trust_cache)(uint64_t kernel_trust, size_t length) = NULL;
 int _pmap_load_trust_cache(uint64_t kernel_trust, size_t length) {
     return (int)kernel_call_7(GETOFFSET(pmap_load_trust_cache), 3, kernel_trust, length, 0);
 }

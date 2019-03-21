@@ -89,7 +89,7 @@ NSString *cdhashFor(NSString *file) {
     NSUInteger algoIndex = [algos indexOfObject:@(requiredHash)];
     
     if (cdhashes == nil) {
-        printf("%s: no cdhashes\n", filename);
+        //printf("%s: no cdhashes\n", filename);
     } else if (algos == nil) {
         printf("%s: no algos\n", filename);
     } else if (algoIndex == NSNotFound) {
@@ -159,7 +159,7 @@ int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain, int (*pma
     mem.next = rk64(trust_chain);
     mem.count = 0;
     uuid_generate(mem.uuid);
-      
+
     NSMutableDictionary *hashes = [NSMutableDictionary new];
     int errors=0;
 
@@ -167,13 +167,14 @@ int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain, int (*pma
         NSString *cdhash = cdhashFor(file);
         if (cdhash == nil) {
             errors++;
+            continue;
+        }
+
+        if (hashes[cdhash] == nil) {
+            //printf("%s: OK\n", file.UTF8String);
+            hashes[cdhash] = file;
         } else {
-            if (hashes[cdhash] == nil) {
-                printf("%s: OK\n", file.UTF8String);
-                hashes[cdhash] = file;
-            } else {
-                printf("%s: same as %s (ignoring)", file.UTF8String, [hashes[cdhash] UTF8String]);
-            }
+            printf("%s: same as %s (ignoring)\n", file.UTF8String, [hashes[cdhash] UTF8String]);
         }
     }
     unsigned numHashes = (unsigned)[hashes count];
@@ -191,7 +192,7 @@ int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain, int (*pma
         return errors;
     }
 
-    size_t length = (sizeof(mem) + hashesToInject * TRUST_CDHASH_LEN + 0x3FFF) & ~0x3FFF;
+    size_t length = (32 + hashesToInject * TRUST_CDHASH_LEN + 0x3FFF) & ~0x3FFF;
     char *buffer = malloc(hashesToInject * TRUST_CDHASH_LEN);
     if (buffer == NULL) {
         fprintf(stderr, "Unable to allocate memory for cdhashes: %s\n", strerror(errno));
@@ -207,7 +208,13 @@ int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain, int (*pma
     mem.count = hashesToInject;
     kwrite(kernel_trust, &mem, sizeof(mem));
     kwrite(kernel_trust + sizeof(mem), buffer, mem.count * TRUST_CDHASH_LEN);
-    pmap_load_trust_cache(kernel_trust, length);
+    if (pmap_load_trust_cache != NULL) {
+      if (pmap_load_trust_cache(kernel_trust, length) != ERR_SUCCESS) {
+        return -4;
+      }
+    } else {
+        wk64(trust_chain, kernel_trust);
+    }
 
     return (int)errors;
   }

@@ -36,6 +36,7 @@ uint64_t kmem_alloc(uint64_t size);
 size_t kread(uint64_t where, void *p, size_t size);
 size_t kwrite(uint64_t where, const void *p, size_t size);
 uint64_t task_self_addr(void);
+extern int (*pmap_load_trust_cache)(uint64_t kernel_trust, size_t length);
 int _pmap_load_trust_cache(uint64_t kernel_trust, size_t length);
 
 #endif // _KERN_FUNCS_H_

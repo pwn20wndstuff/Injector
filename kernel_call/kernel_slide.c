@@ -43,7 +43,7 @@ is_kernel_base(uint64_t base) {
 
 bool
 kernel_slide_init() {
-	if (kernel_slide != 0) {
+	if (kernel_slide != -1) {
 		return true;
 	}
 	// Get the address of the host port.
@@ -63,7 +63,7 @@ kernel_slide_init() {
 
 bool
 kernel_slide_init_with_kernel_image_address(uint64_t address) {
-	if (kernel_slide != 0) {
+	if (kernel_slide != -1) {
 		return true;
 	}
 	// Find the highest possible kernel base address that could still correspond to the given
@@ -73,7 +73,7 @@ kernel_slide_init_with_kernel_image_address(uint64_t address) {
 	base = base + ((address - base) / kernel_slide_step) * kernel_slide_step;
 	// Now walk backwards from that kernel base one kernel slide at a time until we find the
 	// real kernel base.
-	while (base > STATIC_ADDRESS(kernel_base)) {
+	while (base >= STATIC_ADDRESS(kernel_base)) {
 		bool found = is_kernel_base(base);
 		if (found) {
 			kernel_slide = base - STATIC_ADDRESS(kernel_base);
