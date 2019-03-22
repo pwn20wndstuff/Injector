@@ -89,7 +89,9 @@ int main(int argc, char* argv[]) {
     } else {
         printf("Successfully injected [%d/%d] to trust cache.\n", (int)files.count - errs, (int)files.count);
     }
+#if __arm64e__
     kernel_call_deinit();
+#endif
 
     return errs;
   }
