@@ -1,5 +1,7 @@
-Package: science.xnu.injector
+Package: trustinjector
 Name: Trust Cache Injector
+Conflicts: science.xnu.injector
+Replaces: science.xnu.injector
 Version: 0.4~b5
 Architecture: iphoneos-arm
 Description: Inject files to kernel trust cache
