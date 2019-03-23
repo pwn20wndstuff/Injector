@@ -76,6 +76,7 @@ int main(int argc, char* argv[]) {
     current_task = rk64(task_self_addr() + OFFSET(ipc_port, ip_kobject));
     kernel_task = rk64(GETOFFSET(kernel_task));
     kernel_call_init();
+    pmap_load_trust_cache = _pmap_load_trust_cache;
 #endif
     printf("Injecting to trust cache...\n");
     NSMutableArray *files = [NSMutableArray new];
