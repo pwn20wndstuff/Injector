@@ -12,10 +12,11 @@
 #include "CSCommon.h"
 #ifdef UNDECIMUS
 #include <common.h>
-#define printf(x, ...) LOG(x, ##__VA_ARGS__)
-#define fprintf(f, x, ...) LOG(x, ##__VA_ARGS__)
+#define INJECT_LOG(x, ...) LOG(x, ##__VA_ARGS__)
 #define rk64(x) ReadKernel64(x)
 #define wk64(x, y) WriteKernel64(x, y)
+#else
+#define INJECT_LOG(x, ...) printf(x "\n", ##__VA_ARGS__)
 #endif
 #include "kern_funcs.h"
 
@@ -68,10 +69,10 @@ NSString *cdhashFor(NSString *file) {
     if (result != errSecSuccess) {
         if (_SecCopyErrorMessageString != NULL) {
             CFStringRef error = _SecCopyErrorMessageString(result, NULL);
-            fprintf(stderr, "Unable to generate cdhash for %s: %s\n", filename, [(__bridge id)error UTF8String]);
+            INJECT_LOG("Unable to generate cdhash for %s: %s", filename, [(__bridge id)error UTF8String]);
             CFRelease(error);
         } else {
-            fprintf(stderr, "Unable to generate cdhash for %s: %d\n", filename, result);
+            INJECT_LOG("Unable to generate cdhash for %s: %d", filename, result);
         }
         return nil;
     }
@@ -81,7 +82,7 @@ NSString *cdhashFor(NSString *file) {
     NSDictionary *info = CFBridgingRelease(cfinfo);
     CFRelease(staticCode);
     if (result != errSecSuccess) {
-        fprintf(stderr, "Unable to copy cdhash info for %s\n", filename);
+        INJECT_LOG("Unable to copy cdhash info for %s", filename);
         return nil;
     }
     NSArray *cdhashes = info[@"cdhashes"];
@@ -89,15 +90,15 @@ NSString *cdhashFor(NSString *file) {
     NSUInteger algoIndex = [algos indexOfObject:@(requiredHash)];
     
     if (cdhashes == nil) {
-        //printf("%s: no cdhashes\n", filename);
+        INJECT_LOG("%s: no cdhashes", filename);
     } else if (algos == nil) {
-        printf("%s: no algos\n", filename);
+        INJECT_LOG("%s: no algos", filename);
     } else if (algoIndex == NSNotFound) {
-        printf("%s: does not have %s hash\n", cdHashName[requiredHash], filename);
+        INJECT_LOG("%s: does not have %s hash", cdHashName[requiredHash], filename);
     } else {
         cdhash = [cdhashes objectAtIndex:algoIndex];
         if (cdhash == nil) {
-            printf("%s: missing %s cdhash entry\n", file.UTF8String, cdHashName[requiredHash]);
+            INJECT_LOG("%s: missing %s cdhash entry", file.UTF8String, cdHashName[requiredHash]);
         }
     }
     return cdhash;
@@ -111,7 +112,7 @@ NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes) {
       NSMutableDictionary *filtered = [hashes mutableCopy];
     for (NSData *cdhash in [filtered allKeys]) {
         if (isInAMFIStaticCache(filtered[cdhash])) {
-            printf("%s: already in static trustcache, not reinjecting\n", [filtered[cdhash] UTF8String]);
+            INJECT_LOG("%s: already in static trustcache, not reinjecting", [filtered[cdhash] UTF8String]);
             [filtered removeObjectForKey:cdhash];
         }
     }
@@ -121,7 +122,7 @@ NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes) {
     while (search.next != 0) {
         uint64_t searchAddr = search.next;
         kread(searchAddr, &search, sizeof(struct trust_mem));
-        //printf("Checking %d entries at 0x%llx\n", search.count, searchAddr);
+        //INJECT_LOG("Checking %d entries at 0x%llx", search.count, searchAddr);
         char *data = malloc(search.count * TRUST_CDHASH_LEN);
         kread(searchAddr + sizeof(struct trust_mem), data, search.count * TRUST_CDHASH_LEN);
         size_t data_size = search.count * TRUST_CDHASH_LEN;
@@ -130,7 +131,7 @@ NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes) {
             NSData *cdhash = [NSData dataWithBytesNoCopy:dataref length:TRUST_CDHASH_LEN freeWhenDone:NO];
             NSString *hashName = filtered[cdhash];
             if (hashName != nil) {
-                printf("%s: already in dynamic trustcache, not reinjecting\n", [hashName UTF8String]);
+                INJECT_LOG("%s: already in dynamic trustcache, not reinjecting", [hashName UTF8String]);
                 [filtered removeObjectForKey:cdhash];
                 if ([filtered count] == 0) {
                     free(data);
@@ -140,7 +141,7 @@ NSArray *filteredHashes(uint64_t trust_chain, NSDictionary *hashes) {
         }
         free(data);
     }
-    printf("Actually injecting %lu keys\n", [[filtered allKeys] count]);
+    INJECT_LOG("Actually injecting %lu keys", [[filtered allKeys] count]);
 #if __has_feature(objc_arc)
     return [filtered allKeys];
 #else
@@ -171,23 +172,23 @@ int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain, int (*pma
         }
 
         if (hashes[cdhash] == nil) {
-            //printf("%s: OK\n", file.UTF8String);
+            INJECT_LOG("%s: OK", file.UTF8String);
             hashes[cdhash] = file;
         } else {
-            printf("%s: same as %s (ignoring)\n", file.UTF8String, [hashes[cdhash] UTF8String]);
+            INJECT_LOG("%s: same as %s (ignoring)", file.UTF8String, [hashes[cdhash] UTF8String]);
         }
     }
     unsigned numHashes = (unsigned)[hashes count];
 
     if (numHashes < 1) {
-        fprintf(stderr, "Found no hashes to inject\n");
+        INJECT_LOG("Found no hashes to inject");
         return errors;
     }
 
 
     NSArray *filtered = filteredHashes(mem.next, hashes);
     unsigned hashesToInject = (unsigned)[filtered count];
-    printf("%u new hashes to inject\n", hashesToInject);
+    INJECT_LOG("%u new hashes to inject", hashesToInject);
     if (hashesToInject < 1) {
         return errors;
     }
@@ -195,7 +196,7 @@ int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain, int (*pma
     size_t length = (32 + hashesToInject * TRUST_CDHASH_LEN + 0x3FFF) & ~0x3FFF;
     char *buffer = malloc(hashesToInject * TRUST_CDHASH_LEN);
     if (buffer == NULL) {
-        fprintf(stderr, "Unable to allocate memory for cdhashes: %s\n", strerror(errno));
+        INJECT_LOG("Unable to allocate memory for cdhashes: %s", strerror(errno));
         return -3;
     }
     char *curbuf = buffer;
