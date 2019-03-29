@@ -44,15 +44,10 @@ int main(int argc, char* argv[]) {
         return -2;
     }
     set_tfp0(tfp0);
-    struct task_dyld_info dyld_info = { 0 };
-    mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
-    if (task_info(tfp0, TASK_DYLD_INFO, (task_info_t)&dyld_info, &count) != KERN_SUCCESS ||
-        (kernel_base = dyld_info.all_image_info_addr) == 0) {
-        return -3;
-    }
-    kernel_slide = dyld_info.all_image_info_size;
   @autoreleasepool {
     NSMutableDictionary *offsets = [NSMutableDictionary dictionaryWithContentsOfFile:@"/jb/offsets.plist"];
+    kernel_base = (uint64_t)strtoull([offsets[@"KernelBase"] UTF8String];
+    kernel_slide = (uint64_t)strtoull([offsets[@"KernelSlide"] UTF8String]
     SETOFFSET(trustcache, (uint64_t)strtoull([offsets[@"TrustChain"] UTF8String], NULL, 16));
 #if __arm64e__
     SETOFFSET(kernel_task, (uint64_t)strtoull([offsets[@"KernelTask"] UTF8String], NULL, 16));
