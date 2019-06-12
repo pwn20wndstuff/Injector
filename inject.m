@@ -193,7 +193,7 @@ int injectTrustCache(NSArray <NSString*> *files, uint64_t trust_chain, int (*pma
         return errors;
     }
 
-    size_t length = (32 + hashesToInject * TRUST_CDHASH_LEN + 0x3FFF) & ~0x3FFF;
+    size_t length = (32 + hashesToInject * TRUST_CDHASH_LEN + vm_kernel_page_size) & ~vm_kernel_page_size;
     char *buffer = malloc(hashesToInject * TRUST_CDHASH_LEN);
     if (buffer == NULL) {
         INJECT_LOG("Unable to allocate memory for cdhashes: %s", strerror(errno));
